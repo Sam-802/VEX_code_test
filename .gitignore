@@ -6,6 +6,14 @@
 *.bin
 *.elf
 
+# Binary libraries
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+
 # PROS
 bin/
 .vscode/
