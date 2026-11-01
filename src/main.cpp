@@ -31,6 +31,8 @@ static constexpr double TURN_P          = 100;    // 转弯比例强度--度数�
 static constexpr int    TURN_MIN_MV     = 2500;   // 转弯最低电压（克服静摩擦）
 static constexpr double TURN_TOL_DEG    = 1.5;    // 转弯到位容差
 static constexpr int    TURN_TIMEOUT_MS = 2500;   // 转弯超时保护
+static constexpr int    TURN_FB_MV      = 6000;   // 无IMU时开环pivot电压
+static constexpr int    TURN_FB_MS      = 1100;   // 无IMU时开环pivot时长,实车标定90度(不够就加大)
 static constexpr int    LIFT_MV         = 12000;  // 抬升电压
 static constexpr int    LIFT_UP_SIGN    = 1;      // 若遥控L1抬起时实际在下落,改成-1
 static constexpr int    LIFT_UP_MS      = 1200;   // 抬起时长
@@ -38,6 +40,8 @@ static constexpr int    LIFT_DOWN_MS    = 1200;   // 下落时长
 static constexpr int    LIFT_DOWN_WAIT_CAP_MS = 5000; // 等下落通知的上限,防死等
 // 主流程进入第二段直行时写入的"开始下落"绝对时间戳; 0=还没通知
 static volatile uint32_t g_lift_down_at = 0;
+// IMU是否真的在线; 没装IMU时get_rotation()返回INFINITY, INF-INF=NaN会把电机电压算成垃圾值
+static bool imu_ok = false;
 
 /**
 *@brief 把v限制在[lo,hi]之间
@@ -63,6 +67,7 @@ void initialize() {
     while (imu.is_calibrating() && pros::millis() - t0 < 2000) {
         pros::delay(5);
     }
+    imu_ok = (imu.get_rotation() != PROS_ERR_F);//没装IMU时返回INFINITY,据此降级成开环
 }
 
 /**
@@ -89,7 +94,7 @@ void drive_straight(int power_mv, int run_ms, double P_gain) {
 
     while (pros::millis() - t < (uint32_t)run_ms) {
         double err = target - imu.get_rotation();//计算误差,再读一次当前朝向,得到期间偏离目标几度
-        int fix    = (int)(err * P_gain);
+        int fix    = imu_ok ? (int)(err * P_gain) : 0;//没IMU时err是NaN,必须关掉纠偏
 
         int lv = clampi(power_mv + fix, -12000, 12000);
         int rv = clampi(power_mv - fix, -12000, 12000);
@@ -111,6 +116,14 @@ void drive_straight(int power_mv, int run_ms, double P_gain) {
 *@param timeout_ms: 超时保护,防止IMU异常时死循环
 */
 void turn_left(double deg, double P_gain, int min_mv, double tol_deg, int timeout_ms) {
+    if (!imu_ok) {//没IMU: 开环定时pivot, 靠TURN_FB_MS标定90度
+        left_drive.move_voltage(-TURN_FB_MV);
+        right_drive.move_voltage(TURN_FB_MV);
+        pros::delay(TURN_FB_MS);
+        left_drive.move_voltage(0);
+        right_drive.move_voltage(0);
+        return;
+    }
     double target = imu.get_rotation() - deg;
     /*
     为什么要写成imu.get_rotation() - deg而不是 -deg呢
