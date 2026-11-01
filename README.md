@@ -132,10 +132,6 @@ pros upload . COM3   # 指定串口
 
 ## 已知问题
 
-- `src/main.cpp:4` 引用了 `pros/controller.hpp`，该头文件在 PROS 4.2.2 中**不存在**，编译会报
-  `fatal error: pros/controller.hpp: No such file or directory`。
-  `pros::Controller` 由 `pros/misc.hpp`（经 `api.h`）提供，改为 `#include "pros/misc.hpp"` 或直接删掉这一行即可。
-- `src/main.cpp:5` 是一句裸字符串字面量（目前的问题备注），语法上合法但会被编译器告警，建议改成注释。
 - `drive_straight()` 目前只按时间跑，没有距离闭环；`opcontrol()` 中触发直行时没有中断保护。
 
 ## 内核升级
